@@ -1,0 +1,15 @@
+[Unit]
+Description=Solar APi
+Requires=network-online.target
+After=network-online.target
+
+[Service]
+ExecStart=/home/pi/home-solar/home-solar
+WorkingDirectory=/home/pi/home-solar
+StandardOutput=inherit
+StandardError=inherit
+Restart=always
+User=pi
+
+[Install]
+WantedBy=network-online.target
