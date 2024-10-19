@@ -50,9 +50,9 @@ func (s DbService) InsertReading(reading int) error {
 }
 
 func (s DbService) InsertHeaterlog(reading int, on bool) error {
-	status := "POWER_OFF"
+	status := POWER_OFF
 	if on {
-		status = "POWER_ON"
+		status = POWER_ON
 	}
 	record := HeaterLogs{
 		Reading:   reading,
@@ -63,4 +63,10 @@ func (s DbService) InsertHeaterlog(reading int, on bool) error {
 	s.db.Create(&record)
 
 	return nil
+}
+
+func (s DbService) GetLastHeaterStatus() HeaterStatus {
+	var log HeaterLogs
+	s.db.Order("CreatedAt desc").First(&log)
+	return log.Status
 }

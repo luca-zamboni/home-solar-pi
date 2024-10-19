@@ -3,12 +3,14 @@ package device
 import (
 	"errors"
 	"fmt"
+	"log"
 )
 
 type BaseDeviceService struct {
-	HOST string
-	PORT int
-	API  string
+	HOST   string
+	PORT   int
+	API    string
+	logger *log.Logger
 }
 
 var (

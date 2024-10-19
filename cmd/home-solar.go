@@ -4,6 +4,7 @@ import (
 	"home-solar-pi/pkg/api"
 	"home-solar-pi/pkg/db"
 	"home-solar-pi/pkg/device"
+	"home-solar-pi/pkg/utils"
 	"home-solar-pi/pkg/worker"
 	"log"
 	"os"
@@ -38,7 +39,7 @@ func main() {
 	initVar()
 
 	inverterService := device.NewInterverService(INVERTER_HOST, INVERTER_PORT, INVERTER_API)
-	heaterService := device.NewHeaterService(HEATER_HOST, HEATER_PORT, HEATER_API, HEATER_TOGGLE)
+	heaterService := device.NewHeaterService(HEATER_HOST, HEATER_PORT, HEATER_API, HEATER_TOGGLE, log.Default())
 
 	apiServer := api.ApiService{
 		InverterService: &inverterService,
@@ -56,12 +57,12 @@ func main() {
 		panic("Error connecting to Postgres")
 	}
 
-	workerService := worker.NewWorkerSevice(&inverterService, &heaterService, log.Default(), dbService, INVERTER_THRESHOLD)
+	workerService := worker.NewHeaterInverterWorker(&inverterService, &heaterService, log.Default(), dbService, INVERTER_THRESHOLD)
 
 	updaterInterval := time.Second * time.Duration(UPDATE_INTERVAL)
 
 	// worker works async
-	go workerService.UpdateInverter(updaterInterval)
+	go workerService.StartHeaterInverterCycle(updaterInterval)
 
 	// listening for api
 	apiServer.StartServer()
@@ -71,11 +72,9 @@ func main() {
 func initVar() {
 	godotenv.Load()
 
-	updateInterval, err := strconv.Atoi(os.Getenv("UPDATE_INTERVAL"))
-	if err != nil {
-		panic("Interval not a number")
-	}
-	UPDATE_INTERVAL = updateInterval
+	utils.InitGlobals()
+
+	UPDATE_INTERVAL = getVarint("UPDATE_INTERVAL")
 
 	INVERTER_HOST = getVarString("INTERTER_HOST")
 	INVERTER_PORT = getVarint("INTERTER_PORT")

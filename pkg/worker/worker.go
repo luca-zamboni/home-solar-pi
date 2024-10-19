@@ -3,14 +3,13 @@ package worker
 import (
 	"home-solar-pi/pkg/db"
 	"home-solar-pi/pkg/device"
+	"home-solar-pi/pkg/utils"
 	"log"
 	"math/rand"
 	"time"
 )
 
-const debug = true
-
-type WorkerSevice struct {
+type HeaterInverterWorker struct {
 	inverterService *device.InterverService
 	heaterService   *device.HeaterService
 	logger          *log.Logger
@@ -18,9 +17,16 @@ type WorkerSevice struct {
 	threshold       int
 }
 
-func NewWorkerSevice(inverterService *device.InterverService, heaterService *device.HeaterService,
-	logger *log.Logger, dbService *db.DbService, threshold int) WorkerSevice {
-	return WorkerSevice{
+type FallBackIntervall int
+
+var (
+	INCREASE FallBackIntervall = 1
+	NORMAL   FallBackIntervall = 0
+)
+
+func NewHeaterInverterWorker(inverterService *device.InterverService, heaterService *device.HeaterService,
+	logger *log.Logger, dbService *db.DbService, threshold int) HeaterInverterWorker {
+	return HeaterInverterWorker{
 		inverterService: inverterService,
 		heaterService:   heaterService,
 		logger:          logger,
@@ -29,52 +35,89 @@ func NewWorkerSevice(inverterService *device.InterverService, heaterService *dev
 	}
 }
 
-func (w *WorkerSevice) UpdateInverter(interval time.Duration) {
+// starts the heater inverte cycle
+// Intervall is the normal interval of updates.
+// if any error occurs the interval is doubled until interval * 16
+// if no error the interval is set to normal
+// Steps
+// 1. Checks the heater status. if already on -> skip cycle
+// 2. Retrieving Inverter power produced
+// 3. if reading > threashold
+// then 3.1 start the heater
+func (w *HeaterInverterWorker) StartHeaterInverterCycle(interval time.Duration) {
 
+	intervalSleep := interval
 	for {
 
-		reading := w.getInverterReading()
+		fallbackIntervall := w.doWork()
 
-		w.logger.Printf("Power %+v\n", reading)
-
-		w.dbService.InsertReading(reading)
-
-		if reading > w.threshold {
-			_, err := w.heaterService.PowerOn()
-
-			if err != nil {
-				w.logger.Printf("Error heater := %s\n", err.Error())
-			}
-
-			w.logger.Println("Heater activated")
-			w.dbService.InsertHeaterlog(reading, true)
+		if fallbackIntervall == NORMAL {
+			intervalSleep = interval
+		} else {
+			intervalSleep = min(interval*16, intervalSleep*2)
 		}
 
-		time.Sleep(interval)
+		time.Sleep(intervalSleep)
 	}
 
 }
 
-func (w *WorkerSevice) getInverterReading() int {
-	var power *device.InverterResponse
+func (w *HeaterInverterWorker) doWork() FallBackIntervall {
 
-	if debug {
-		power = &device.InverterResponse{}
+	statusOn, err := w.heaterService.GetStatus()
 
-		power.Body.Data.PAC.Values = map[string]int{}
-		power.Body.Data.PAC.Values["1"] = rand.Int()%300 + 400
-		power.Body.Data.PAC.Unit = "W"
-
-	} else {
-		var err error
-		power, err = w.inverterService.GetCurrentPower()
-
-		if err != nil {
-			w.logger.Printf("Error retrieving current power\n")
-		}
+	if err != nil {
+		w.logger.Printf("Error heater := %s\n", err.Error())
+		return INCREASE
 	}
 
-	var reading int = power.Body.Data.PAC.Values["1"]
+	// shelly auto deactivates after HEATER_TOGGLE seconds
+	if statusOn {
+		return NORMAL
+	}
 
-	return reading
+	reading, err := w.getInverterReading()
+	if err != nil {
+		w.logger.Printf("Inverter error := %s\n", err.Error())
+		return INCREASE
+	}
+
+	w.logger.Printf("Inverter Power %+v\n", reading)
+
+	// Inserting in log table to do statistics
+	w.dbService.InsertReading(reading)
+
+	if reading > w.threshold {
+		_, err := w.heaterService.PowerOn()
+		if err != nil {
+			w.logger.Printf("Error heater := %s\n", err.Error())
+			return NORMAL
+		}
+		w.logger.Println("Heater activated")
+
+		// Inserting in Heater logs when activated with which reading from inverter
+		w.dbService.InsertHeaterlog(reading, true)
+	}
+
+	return NORMAL
+
+}
+
+func (w *HeaterInverterWorker) getInverterReading() (int, error) {
+	var power *device.InverterResponse
+
+	if utils.Inactive {
+		return rand.Int()%300 + 400, nil
+	}
+
+	var err error
+	power, err = w.inverterService.GetCurrentPower()
+
+	if err != nil {
+		w.logger.Printf("Error retrieving current power\n")
+		return 0, err
+	}
+
+	return power.Body.Data.PAC.Values["1"], nil
+
 }
