@@ -12,7 +12,8 @@ services:
       - postgres
     ports:
       - 5432:5432
-    command: ["postgres", "-c", "log_statement=all"]
+    command:
+      ["postgres", "-c", "log_statement=all", "-c", "log_destination=stdout"]
 
   home-solar-pi-server:
     container_name: home-solar-pi-server
