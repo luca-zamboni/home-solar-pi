@@ -13,6 +13,16 @@ services:
     ports:
       - 5432:5432
 
+  home-solar-pi-server:
+    container_name: home-solar-pi-server
+    image: home-solar-pi-server:latest
+    network_mode: "host"
+    ports:
+      - 5000:5000
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
 networks:
   postgres:
     driver: bridge
