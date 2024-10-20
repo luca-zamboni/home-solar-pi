@@ -1,7 +1,7 @@
 services:
   postgres:
     container_name: postgres_container
-    image: postgres:17.0-alpine3.20
+    image: postgres
     volumes:
       - ./postgres-data:/var/lib/postgresql/data
     environment:
